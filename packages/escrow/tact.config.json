@@ -1,0 +1,7 @@
+{
+  "projects": [{
+    "name": "JettonEscrow",
+    "path": "./contracts/JettonEscrow.tact",
+    "output": "./build/JettonEscrow"
+  }]
+}

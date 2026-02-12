@@ -1,0 +1,20 @@
+{
+  "name": "ibis",
+  "private": true,
+  "workspaces": [
+    "packages/shared",
+    "packages/bot",
+    "packages/api",
+    "packages/mini-app",
+    "packages/escrow"
+  ],
+  "scripts": {
+    "build": "npm run build --workspaces",
+    "dev:api": "npm run dev -w packages/api",
+    "dev:bot": "npm run dev -w packages/bot",
+    "dev:mini-app": "npm run dev -w packages/mini-app",
+    "db:migrate": "npm run migrate -w packages/shared",
+    "db:generate": "npm run generate -w packages/shared",
+    "db:seed": "npx tsx scripts/seed-testdata.ts"
+  }
+}

@@ -1,0 +1,155 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum OrderType {
+  BUY
+  SELL
+}
+
+enum OrderStatus {
+  ACTIVE
+  MATCHED
+  PARTIALLY_MATCHED
+  CANCELLED
+  EXPIRED
+}
+
+enum TradeStatus {
+  AWAITING_ESCROW
+  ESCROW_LOCKED
+  FIAT_SENT
+  RELEASING
+  COMPLETED
+  REFUNDED
+  DISPUTED
+  RESOLVED_RELEASE
+  RESOLVED_REFUND
+  CANCELLED
+  EXPIRED
+}
+
+enum KycStatus {
+  NOT_STARTED
+  PENDING
+  ACTION_REQUIRED
+  VERIFIED
+  REJECTED
+}
+
+model User {
+  id              String    @id @default(cuid())
+  telegramId      BigInt    @unique
+  firstName       String
+  lastName        String?
+  username        String?
+  tonAddress      String?
+
+  // KYC
+  kycStatus       KycStatus @default(NOT_STARTED)
+  kycApplicantId  String?
+  kycVerifiedAt   DateTime?
+  kycComment      String?
+
+  // Limits
+  maxTradeAmount  Float     @default(500)
+
+  // Reputation
+  reputationScore Float     @default(0)
+  totalTrades     Int       @default(0)
+  successfulTrades Int      @default(0)
+  totalVolume     Float     @default(0)
+
+  // Relations
+  orders          Order[]
+  buyTrades       Trade[]   @relation("BuyerTrades")
+  sellTrades      Trade[]   @relation("SellerTrades")
+
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+
+  @@index([telegramId])
+  @@index([tonAddress])
+}
+
+model Order {
+  id              String      @id @default(cuid())
+  userId          String
+  user            User        @relation(fields: [userId], references: [id])
+
+  type            OrderType
+  amount          Float
+  remainingAmount Float
+  pricePerUsdt    Float
+  paymentMethods  String[]
+  bankDetails     String?
+  minTradeAmount  Float?
+  maxTradeAmount  Float?
+
+  status          OrderStatus @default(ACTIVE)
+
+  trades          Trade[]
+
+  expiresAt       DateTime?
+  createdAt       DateTime    @default(now())
+  updatedAt       DateTime    @updatedAt
+
+  @@index([type, status])
+  @@index([userId])
+  @@index([pricePerUsdt])
+}
+
+model Trade {
+  id              String      @id @default(cuid())
+  orderId         String
+  order           Order       @relation(fields: [orderId], references: [id])
+
+  buyerId         String
+  buyer           User        @relation("BuyerTrades", fields: [buyerId], references: [id])
+  sellerId        String
+  seller          User        @relation("SellerTrades", fields: [sellerId], references: [id])
+
+  amount          Float
+  pricePerUsdt    Float
+  fiatAmount      Float
+  fiatCurrency    String      @default("TTD")
+  paymentMethod   String
+
+  // Escrow
+  escrowId        Int?
+  escrowTxHash    String?
+  releaseTxHash   String?
+
+  // Fiat settlement
+  paymentReference String?
+  bankDetails     String?
+
+  // Timestamps
+  escrowLockedAt  DateTime?
+  fiatSentAt      DateTime?
+  completedAt     DateTime?
+  disputedAt      DateTime?
+
+  // Dispute
+  disputeReason   String?
+  disputeResolution String?
+
+  status          TradeStatus @default(AWAITING_ESCROW)
+
+  // Rating (after completion)
+  buyerRating     Int?
+  sellerRating    Int?
+
+  createdAt       DateTime    @default(now())
+  updatedAt       DateTime    @updatedAt
+
+  @@index([buyerId])
+  @@index([sellerId])
+  @@index([status])
+  @@index([orderId])
+}
