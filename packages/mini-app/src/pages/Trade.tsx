@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback } from 'react';
 import { useParams } from 'react-router-dom';
 import { apiCall } from '../lib/api';
 import { useHaptic } from '../hooks/useHaptic';
+import { getCurrencySymbol } from '../lib/currencies';
 import LockEscrow from '../components/LockEscrow';
 import type { Trade as TradeType, TradeStatus } from '../lib/types';
 
@@ -129,14 +130,12 @@ export default function Trade() {
     try {
       const data = await apiCall<TradeType>('GET', `/api/trades/${id}`);
       setTrade(data);
-      // Determine if current user is buyer by checking trade data
-      // The API should include user context; we infer from the trade
+      // Determine if current user is buyer by comparing Telegram IDs
       const initData = window.Telegram?.WebApp?.initDataUnsafe;
-      const userId = (initData as Record<string, unknown>)?.user
-        ? ((initData as Record<string, unknown>).user as Record<string, unknown>).id
-        : null;
-      if (userId) {
-        setIsBuyer(data.buyerId === String(userId));
+      const tgUser = (initData as Record<string, unknown>)?.user as Record<string, unknown> | undefined;
+      const telegramId = tgUser?.id ? Number(tgUser.id) : null;
+      if (telegramId && data.buyer?.telegramId) {
+        setIsBuyer(Number(data.buyer.telegramId) === telegramId);
       }
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to load trade');
@@ -255,12 +254,24 @@ export default function Trade() {
           </div>
           <div className="flex justify-between">
             <span className="text-tg-hint text-sm">Rate</span>
-            <span className="text-tg-text text-sm">{trade.pricePerUsdt} TTD/USDT</span>
+            <span className="text-tg-text text-sm">{trade.pricePerUsdt} {getCurrencySymbol(trade.fiatCurrency)}/USDT</span>
           </div>
           <div className="flex justify-between border-t border-tg-secondary-bg pt-2">
             <span className="text-tg-hint text-sm">Total</span>
-            <span className="text-tg-text font-bold">{trade.fiatAmount.toLocaleString()} TTD</span>
+            <span className="text-tg-text font-bold">{trade.fiatAmount.toLocaleString()} {getCurrencySymbol(trade.fiatCurrency)}</span>
           </div>
+          {trade.feeAmount != null && trade.feeAmount > 0 && (
+            <>
+              <div className="flex justify-between">
+                <span className="text-tg-hint text-sm">Platform Fee ({trade.feePercent ?? 0.5}%)</span>
+                <span className="text-tg-hint text-sm">{trade.feeAmount.toFixed(2)} USDT</span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-tg-hint text-sm">Net Amount</span>
+                <span className="text-tg-text text-sm font-semibold">{(trade.amount - trade.feeAmount).toFixed(2)} USDT</span>
+              </div>
+            </>
+          )}
           {trade.paymentReference && (
             <div className="flex justify-between">
               <span className="text-tg-hint text-sm">Payment Ref</span>
@@ -272,14 +283,14 @@ export default function Trade() {
 
       {/* Status-specific Content */}
 
-      {/* AWAITING_ESCROW - Buyer: Lock escrow */}
-      {trade.status === 'AWAITING_ESCROW' && isBuyer && (
+      {/* AWAITING_ESCROW - Seller: Lock escrow (seller has USDT) */}
+      {trade.status === 'AWAITING_ESCROW' && !isBuyer && (
         <div className="bg-tg-section-bg rounded-2xl p-4 mb-4 animate-slide-up">
           <h3 className="text-tg-text font-semibold mb-1">Lock Escrow</h3>
           <p className="text-tg-hint text-sm mb-4">
-            Lock USDT in the escrow smart contract to proceed with this trade.
+            Lock your USDT in the escrow smart contract to proceed with this trade.
           </p>
-          {trade.escrowId !== undefined && (
+          {trade.escrowId != null && (
             <LockEscrow
               tradeId={trade.id}
               escrowId={trade.escrowId}
@@ -297,14 +308,14 @@ export default function Trade() {
         </div>
       )}
 
-      {/* AWAITING_ESCROW - Seller: Waiting */}
-      {trade.status === 'AWAITING_ESCROW' && !isBuyer && (
+      {/* AWAITING_ESCROW - Buyer: Waiting for seller to lock */}
+      {trade.status === 'AWAITING_ESCROW' && isBuyer && (
         <div className="bg-tg-section-bg rounded-2xl p-4 mb-4">
           <div className="text-center py-4">
             <div className="animate-spin h-8 w-8 border-2 border-tg-button border-t-transparent rounded-full mx-auto mb-3" />
-            <p className="text-tg-text font-semibold">Waiting for Buyer</p>
+            <p className="text-tg-text font-semibold">Waiting for Seller</p>
             <p className="text-tg-hint text-sm mt-1">
-              The buyer is locking USDT in escrow
+              The seller is locking USDT in escrow
             </p>
             <div className="mt-3">
               <CountdownTimer
@@ -320,7 +331,7 @@ export default function Trade() {
         <div className="bg-tg-section-bg rounded-2xl p-4 mb-4 animate-slide-up">
           <h3 className="text-tg-text font-semibold mb-3">Send Payment</h3>
           <p className="text-tg-hint text-sm mb-3">
-            USDT is locked in escrow. Send {trade.fiatAmount.toLocaleString()} TTD to the seller.
+            USDT is locked in escrow. Send {trade.fiatAmount.toLocaleString()} {getCurrencySymbol(trade.fiatCurrency)} to the seller.
           </p>
 
           {trade.bankDetails && (
@@ -354,7 +365,7 @@ export default function Trade() {
             <p className="text-3xl mb-2">&#x1F3E6;</p>
             <p className="text-tg-text font-semibold">Escrow Locked</p>
             <p className="text-tg-hint text-sm mt-1">
-              Waiting for the buyer to send {trade.fiatAmount.toLocaleString()} TTD to your bank account
+              Waiting for the buyer to send {trade.fiatAmount.toLocaleString()} {getCurrencySymbol(trade.fiatCurrency)} to your bank account
             </p>
           </div>
         </div>
@@ -365,7 +376,7 @@ export default function Trade() {
         <div className="bg-tg-section-bg rounded-2xl p-4 mb-4 animate-slide-up">
           <h3 className="text-tg-text font-semibold mb-3">Confirm Receipt</h3>
           <p className="text-tg-hint text-sm mb-3">
-            The buyer says they've sent {trade.fiatAmount.toLocaleString()} TTD.
+            The buyer says they've sent {trade.fiatAmount.toLocaleString()} {getCurrencySymbol(trade.fiatCurrency)}.
             Check your bank account and confirm.
           </p>
 
@@ -409,7 +420,7 @@ export default function Trade() {
             <p className="text-3xl mb-2">&#x23F3;</p>
             <p className="text-tg-text font-semibold">Payment Sent</p>
             <p className="text-tg-hint text-sm mt-1">
-              Waiting for the seller to confirm receipt of {trade.fiatAmount.toLocaleString()} TTD
+              Waiting for the seller to confirm receipt of {trade.fiatAmount.toLocaleString()} {getCurrencySymbol(trade.fiatCurrency)}
             </p>
             <div className="mt-3">
               <span className="text-tg-hint text-xs">Auto-release in </span>
@@ -430,7 +441,7 @@ export default function Trade() {
             <p className="text-tg-hint text-sm mt-2">
               {isBuyer
                 ? `You received ${trade.amount} USDT`
-                : `You received ${trade.fiatAmount.toLocaleString()} TTD`}
+                : `You received ${trade.fiatAmount.toLocaleString()} ${getCurrencySymbol(trade.fiatCurrency)}`}
             </p>
           </div>
 
@@ -442,12 +453,18 @@ export default function Trade() {
             </div>
             <div className="flex justify-between text-sm">
               <span className="text-tg-hint">Rate</span>
-              <span className="text-tg-text">{trade.pricePerUsdt} TTD/USDT</span>
+              <span className="text-tg-text">{trade.pricePerUsdt} {getCurrencySymbol(trade.fiatCurrency)}/USDT</span>
             </div>
             <div className="flex justify-between text-sm border-t border-tg-section-bg pt-2">
               <span className="text-tg-hint">Total</span>
-              <span className="text-tg-text font-bold">{trade.fiatAmount.toLocaleString()} TTD</span>
+              <span className="text-tg-text font-bold">{trade.fiatAmount.toLocaleString()} {getCurrencySymbol(trade.fiatCurrency)}</span>
             </div>
+            {trade.feeAmount != null && trade.feeAmount > 0 && (
+              <div className="flex justify-between text-sm">
+                <span className="text-tg-hint">Fee ({trade.feePercent ?? 0.5}%)</span>
+                <span className="text-tg-hint">{trade.feeAmount.toFixed(2)} USDT</span>
+              </div>
+            )}
           </div>
 
           {/* Rating */}

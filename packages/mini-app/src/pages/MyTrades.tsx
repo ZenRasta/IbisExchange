@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { apiCall } from '../lib/api';
 import { useHaptic } from '../hooks/useHaptic';
+import { getCurrencySymbol } from '../lib/currencies';
 import type { Trade, TradeStatus } from '../lib/types';
 
 type Tab = 'active' | 'completed' | 'disputed';
@@ -54,9 +55,9 @@ export default function MyTrades() {
     setLoading(true);
     setError(null);
     try {
-      const statuses = TAB_FILTERS[tab].join(',');
-      const data = await apiCall<Trade[]>('GET', `/api/trades?status=${statuses}`);
-      setTrades(data);
+      const data = await apiCall<Trade[]>('GET', '/api/trades');
+      const statuses = TAB_FILTERS[tab];
+      setTrades(data.filter(t => statuses.includes(t.status)));
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to load trades');
     } finally {
@@ -152,7 +153,7 @@ export default function MyTrades() {
               </div>
               <div className="flex items-center justify-between">
                 <span className="text-tg-hint text-sm">
-                  @ {trade.pricePerUsdt} TTD = {trade.fiatAmount.toLocaleString()} TTD
+                  @ {trade.pricePerUsdt} {getCurrencySymbol(trade.fiatCurrency)} = {trade.fiatAmount.toLocaleString()} {getCurrencySymbol(trade.fiatCurrency)}
                 </span>
                 <span className="text-tg-hint text-xs">
                   {new Date(trade.createdAt).toLocaleDateString(undefined, {

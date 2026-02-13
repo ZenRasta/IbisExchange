@@ -5,7 +5,10 @@ import {
     MAX_TRADE_USDT_UNVERIFIED,
     MAX_TRADE_USDT_VERIFIED,
     SUPPORTED_PAYMENT_METHODS,
+    SUPPORTED_CURRENCIES,
+    CURRENCY_CODES,
 } from '@ibis/shared';
+import type { CurrencyCode } from '@ibis/shared';
 import { matchingEngine } from '../services/matchingEngine';
 
 export const ordersRouter = Router();
@@ -23,6 +26,7 @@ ordersRouter.get('/', async (req: Request, res: Response) => {
         const paymentMethod = req.query.paymentMethod as string | undefined;
         const minAmount = parseFloat(req.query.minAmount as string) || undefined;
         const maxAmount = parseFloat(req.query.maxAmount as string) || undefined;
+        const currency = req.query.currency as string | undefined;
 
         const mine = req.query.mine === 'true';
         const where: Record<string, unknown> = {
@@ -49,6 +53,11 @@ ordersRouter.get('/', async (req: Request, res: Response) => {
 
         if (paymentMethod) {
             where.paymentMethods = { has: paymentMethod };
+        }
+
+        // Filter by currency
+        if (currency && (CURRENCY_CODES as readonly string[]).includes(currency)) {
+            where.currency = currency;
         }
 
         if (minAmount !== undefined || maxAmount !== undefined) {
@@ -109,7 +118,19 @@ ordersRouter.post('/', async (req: Request, res: Response) => {
             bankDetails,
             minTradeAmount,
             maxTradeAmount,
+            currency: reqCurrency,
         } = req.body;
+
+        // Validate currency (default to TTD)
+        const currency: string = reqCurrency || 'TTD';
+        if (!(CURRENCY_CODES as readonly string[]).includes(currency)) {
+            res.status(400).json({
+                success: false,
+                error: `Invalid currency: ${currency}. Supported: ${CURRENCY_CODES.join(', ')}`,
+                code: 'VALIDATION_ERROR',
+            });
+            return;
+        }
 
         // Validate type
         if (!type || (type !== 'BUY' && type !== 'SELL')) {
@@ -151,12 +172,16 @@ ordersRouter.post('/', async (req: Request, res: Response) => {
             return;
         }
 
-        const validMethods = SUPPORTED_PAYMENT_METHODS as readonly string[];
+        // Get per-currency payment methods (fall back to legacy list)
+        const currencyConfig = SUPPORTED_CURRENCIES[currency as CurrencyCode];
+        const validMethods: readonly string[] = currencyConfig
+            ? currencyConfig.paymentMethods
+            : (SUPPORTED_PAYMENT_METHODS as readonly string[]);
         for (const method of paymentMethods) {
             if (!validMethods.includes(method)) {
                 res.status(400).json({
                     success: false,
-                    error: `Invalid payment method: ${method}. Supported: ${validMethods.join(', ')}`,
+                    error: `Invalid payment method: ${method}. Supported for ${currency}: ${validMethods.join(', ')}`,
                     code: 'VALIDATION_ERROR',
                 });
                 return;
@@ -219,6 +244,7 @@ ordersRouter.post('/', async (req: Request, res: Response) => {
                 amount,
                 remainingAmount: amount,
                 pricePerUsdt,
+                currency,
                 paymentMethods,
                 bankDetails: bankDetails || null,
                 minTradeAmount: minTradeAmount || null,

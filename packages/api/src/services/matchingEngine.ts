@@ -1,4 +1,4 @@
-import { prisma, MIN_TRADE_USDT } from '@ibis/shared';
+import { prisma, MIN_TRADE_USDT, calculateFee } from '@ibis/shared';
 import type { Trade } from '@prisma/client';
 import { reputationService } from './reputationService';
 import { notificationService } from './notificationService';
@@ -9,12 +9,16 @@ export class MatchingEngine {
      * Ordered by: best price (lowest), then reputation (highest), then oldest (FIFO).
      * Returns orders with included user info.
      */
-    async findBestSellOrders(amount: number, paymentMethod?: string, limit = 20) {
+    async findBestSellOrders(amount: number, paymentMethod?: string, limit = 20, currency?: string) {
         const where: Record<string, unknown> = {
             type: 'SELL',
             status: { in: ['ACTIVE', 'PARTIALLY_MATCHED'] },
             remainingAmount: { gte: Math.min(amount, MIN_TRADE_USDT) },
         };
+
+        if (currency) {
+            where.currency = currency;
+        }
 
         if (paymentMethod) {
             where.paymentMethods = { has: paymentMethod };
@@ -49,12 +53,16 @@ export class MatchingEngine {
      * Find the best buy orders matching the seller's criteria.
      * Ordered by: best price (highest), then reputation (highest), then oldest (FIFO).
      */
-    async findBestBuyOrders(amount: number, paymentMethod?: string, limit = 20) {
+    async findBestBuyOrders(amount: number, paymentMethod?: string, limit = 20, currency?: string) {
         const where: Record<string, unknown> = {
             type: 'BUY',
             status: { in: ['ACTIVE', 'PARTIALLY_MATCHED'] },
             remainingAmount: { gte: Math.min(amount, MIN_TRADE_USDT) },
         };
+
+        if (currency) {
+            where.currency = currency;
+        }
 
         if (paymentMethod) {
             where.paymentMethods = { has: paymentMethod };
@@ -159,7 +167,14 @@ export class MatchingEngine {
 
         const fiatAmount = Math.round(tradeAmount * order.pricePerUsdt * 100) / 100;
 
-        // Use a transaction to atomically create trade and update order
+        // Calculate fee
+        const fee = calculateFee(tradeAmount);
+
+        // Generate a unique escrowId for the on-chain escrow contract
+        // Use lower 31 bits of timestamp + random to fit in a safe Int range
+        const escrowId = ((Date.now() % 0x7FFFFFFF) ^ (Math.floor(Math.random() * 0x7FFFFFFF))) >>> 0;
+
+        // Use a transaction to atomically create trade, update order, and record fee
         const trade = await prisma.$transaction(async (tx) => {
             // Update order remaining amount
             const newRemaining = order.remainingAmount - tradeAmount;
@@ -173,7 +188,7 @@ export class MatchingEngine {
                 },
             });
 
-            // Create the trade
+            // Create the trade with fee info and order's currency
             const newTrade = await tx.trade.create({
                 data: {
                     orderId,
@@ -182,10 +197,23 @@ export class MatchingEngine {
                     amount: tradeAmount,
                     pricePerUsdt: order.pricePerUsdt,
                     fiatAmount,
-                    fiatCurrency: 'TTD',
+                    fiatCurrency: order.currency || 'TTD',
                     paymentMethod: order.paymentMethods[0] || 'Unknown',
                     bankDetails: order.bankDetails,
                     status: 'AWAITING_ESCROW',
+                    escrowId,
+                    feeAmount: fee.feeAmount,
+                    feePercent: fee.feePercent,
+                },
+            });
+
+            // Create a FeeRecord
+            await tx.feeRecord.create({
+                data: {
+                    tradeId: newTrade.id,
+                    feeAmount: fee.feeAmount,
+                    feePercent: fee.feePercent,
+                    paidBy: sellerId,
                 },
             });
 

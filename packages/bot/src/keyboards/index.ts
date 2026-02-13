@@ -18,9 +18,9 @@ export function mainMenuKeyboard(miniAppUrl: string): InlineKeyboard {
 }
 
 /**
- * Trade actions keyboard for buyer
+ * Trade actions keyboard for seller — lock USDT in escrow
  */
-export function buyerTradeActionsKeyboard(tradeId: string, miniAppUrl: string): InlineKeyboard {
+export function sellerLockEscrowKeyboard(tradeId: string, miniAppUrl: string): InlineKeyboard {
   return new InlineKeyboard()
     .webApp('Lock Escrow', `${miniAppUrl}/trade/${tradeId}`)
     .row()

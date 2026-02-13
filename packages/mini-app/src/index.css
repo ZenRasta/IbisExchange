@@ -13,6 +13,16 @@
   --tg-theme-section-bg-color: #ffffff;
   --tg-theme-accent-text-color: #2481cc;
   --tg-theme-destructive-text-color: #e53935;
+
+  --ibis-primary: #1A3A5C;
+  --ibis-primary-light: #2E5D8C;
+  --ibis-secondary: #00B4A6;
+  --ibis-secondary-light: #4DD9CE;
+  --ibis-accent: #D4380D;
+  --ibis-accent-warm: #F5722B;
+  --ibis-accent-gold: #F5A623;
+  --ibis-buy-green: #00C853;
+  --ibis-sell-red: #FF1744;
 }
 
 * {

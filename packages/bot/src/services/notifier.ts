@@ -2,7 +2,7 @@ import { Bot } from 'grammy';
 import { prisma } from '@ibis/shared';
 import type { BotContext } from '../types';
 import {
-  buyerTradeActionsKeyboard,
+  sellerLockEscrowKeyboard,
   buyerEscrowLockedKeyboard,
   sellerPaymentConfirmKeyboard,
   disputeResolutionKeyboard,
@@ -73,7 +73,7 @@ export async function notifyTradeCreated(
   const amount = trade.amount.toFixed(2);
   const fiat = trade.fiatAmount.toFixed(2);
 
-  // Notify seller
+  // Notify seller — they need to lock USDT in escrow
   await safeSend(
     bot,
     trade.seller.telegramId,
@@ -82,10 +82,11 @@ export async function notifyTradeCreated(
     `at ${trade.pricePerUsdt.toFixed(2)} TTD/USDT.\n` +
     `Total: <b>${fiat} ${trade.fiatCurrency}</b>\n` +
     `Payment: ${trade.paymentMethod}\n\n` +
-    `Waiting for buyer to lock USDT in escrow.`,
+    `Please lock your USDT in escrow to proceed.`,
+    { reply_markup: sellerLockEscrowKeyboard(tradeId, MINI_APP_URL) },
   );
 
-  // Notify buyer
+  // Notify buyer — waiting for seller to lock
   await safeSend(
     bot,
     trade.buyer.telegramId,
@@ -94,8 +95,7 @@ export async function notifyTradeCreated(
     `at ${trade.pricePerUsdt.toFixed(2)} TTD/USDT.\n` +
     `Total: <b>${fiat} ${trade.fiatCurrency}</b>\n` +
     `Payment: ${trade.paymentMethod}\n\n` +
-    `Please lock your USDT in escrow to proceed.`,
-    { reply_markup: buyerTradeActionsKeyboard(tradeId, MINI_APP_URL) },
+    `Waiting for seller to lock USDT in escrow.`,
   );
 }
 
@@ -112,22 +112,21 @@ export async function notifyEscrowLocked(
   const ref = tradeRef(tradeId);
   const fiat = trade.fiatAmount.toFixed(2);
 
-  // Notify seller
+  // Notify seller — their USDT is now locked
   await safeSend(
     bot,
     trade.seller.telegramId,
     `<b>Escrow Locked - ${ref}</b>\n\n` +
-    `${userMention(trade.buyer)} has locked <b>${trade.amount.toFixed(2)} USDT</b> in escrow.\n` +
-    `Waiting for buyer to send <b>${fiat} ${trade.fiatCurrency}</b> via ${trade.paymentMethod}.` +
-    (trade.bankDetails ? `\n\nBank details: <code>${trade.bankDetails}</code>` : ''),
+    `Your <b>${trade.amount.toFixed(2)} USDT</b> is safely in escrow.\n` +
+    `Waiting for ${userMention(trade.buyer)} to send <b>${fiat} ${trade.fiatCurrency}</b> via ${trade.paymentMethod}.`,
   );
 
-  // Notify buyer
+  // Notify buyer — seller locked USDT, buyer should now send fiat
   await safeSend(
     bot,
     trade.buyer.telegramId,
     `<b>Escrow Locked - ${ref}</b>\n\n` +
-    `Your USDT is safely in escrow.\n` +
+    `${userMention(trade.seller)} has locked <b>${trade.amount.toFixed(2)} USDT</b> in escrow.\n` +
     `Please send <b>${fiat} ${trade.fiatCurrency}</b> to the seller via ${trade.paymentMethod}.` +
     (trade.bankDetails ? `\n\nBank details: <code>${trade.bankDetails}</code>` : '') +
     `\n\nOnce you've sent the payment, tap the button below.`,

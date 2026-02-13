@@ -12,7 +12,7 @@ dotenv.config({ path: '/var/www/ibis/.env' });
 // Import Prisma after env is loaded
 import prisma from '../packages/shared/src/db';
 
-const API_BASE = 'http://localhost:3000';
+const API_BASE = process.env.TEST_API_BASE || 'http://localhost:3000';
 const BOT_TOKEN = process.env.BOT_TOKEN!;
 
 // --- Test Utilities ---

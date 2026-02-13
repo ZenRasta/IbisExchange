@@ -98,7 +98,8 @@ tradesRouter.get('/', async (req: Request, res: Response) => {
         };
 
         if (status) {
-            where.status = status;
+            const statuses = status.split(',').map(s => s.trim()).filter(Boolean);
+            where.status = statuses.length === 1 ? statuses[0] : { in: statuses };
         }
 
         const [trades, total] = await Promise.all([
@@ -393,6 +394,22 @@ tradesRouter.post('/:id/confirm-receipt', async (req: Request, res: Response) =>
                 completedAt: new Date(),
             },
         });
+
+        // Create a FeeRecord if the trade has a fee
+        if (completed.feeAmount && completed.feeAmount > 0) {
+            try {
+                await prisma.feeRecord.create({
+                    data: {
+                        tradeId: completed.id,
+                        feeAmount: completed.feeAmount,
+                        feePercent: completed.feePercent || 0,
+                        paidBy: completed.sellerId,
+                    },
+                });
+            } catch (feeErr) {
+                console.error('Failed to create FeeRecord on completion:', feeErr);
+            }
+        }
 
         // Update reputation for both parties
         await reputationService.recordCompletedTrade(completed);

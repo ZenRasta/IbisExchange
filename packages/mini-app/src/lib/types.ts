@@ -9,6 +9,7 @@ export interface Order {
   bankDetails?: string;
   minTradeAmount?: number;
   maxTradeAmount?: number;
+  currency?: string;
   status: 'ACTIVE' | 'PARTIALLY_MATCHED' | 'MATCHED' | 'CANCELLED' | 'EXPIRED';
   expiresAt?: string;
   createdAt: string;
@@ -37,6 +38,8 @@ export interface Trade {
   disputedAt?: string;
   disputeReason?: string;
   disputeResolution?: string;
+  feeAmount?: number;
+  feePercent?: number;
   status: TradeStatus;
   buyerRating?: number;
   sellerRating?: number;
@@ -74,6 +77,11 @@ export interface UserProfile {
   totalTrades: number;
   successfulTrades: number;
   totalVolume: number;
+  totalUpvotes?: number;
+  totalDownvotes?: number;
+  isBanned?: boolean;
+  isAdmin?: boolean;
+  preferredCurrency?: string;
   createdAt: string;
 }
 
@@ -88,4 +96,46 @@ export interface UserStats {
 export interface KycStatus {
   status: 'NOT_STARTED' | 'PENDING' | 'ACTION_REQUIRED' | 'VERIFIED' | 'REJECTED';
   verifiedAt?: string;
+}
+
+export interface CurrencyRate {
+  avgSellRate: number;
+  orderCount: number;
+  minRate: number;
+  maxRate: number;
+  updated: string;
+}
+
+export interface LeaderboardUser {
+  id: string;
+  username?: string;
+  firstName: string;
+  reputationScore: number;
+  totalTrades: number;
+  totalVolume: number;
+  totalUpvotes: number;
+  totalDownvotes: number;
+  kycStatus: string;
+  reputationTier: { badge: string; label: string };
+  createdAt: string;
+}
+
+export interface DisputeInfo {
+  id: string;
+  tradeId: string;
+  reason: string;
+  description: string;
+  status: string;
+  createdAt: string;
+  resolvedAt?: string;
+}
+
+export interface AdminStats {
+  totalTrades: number;
+  totalVolume: number;
+  activeUsers: number;
+  openDisputes: number;
+  feesCollected: number;
+  bannedUsers: number;
+  volumeByCurrency: Record<string, number>;
 }

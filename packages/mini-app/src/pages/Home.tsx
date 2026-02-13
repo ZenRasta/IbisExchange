@@ -1,9 +1,10 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useTonAddress } from '@tonconnect/ui-react';
 import { apiCall } from '../lib/api';
 import { useHaptic } from '../hooks/useHaptic';
-import type { UserStats, Trade } from '../lib/types';
+import { CURRENCIES, getCurrencySymbol, getCurrencyFlag } from '../lib/currencies';
+import type { UserStats, Trade, CurrencyRate } from '../lib/types';
 
 function SkeletonCard() {
   return (
@@ -23,10 +24,29 @@ export default function Home() {
   const [recentTrades, setRecentTrades] = useState<Trade[]>([]);
   const [balance, setBalance] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
+  const [rates, setRates] = useState<Record<string, CurrencyRate>>({});
+  const [ratesLoading, setRatesLoading] = useState(true);
+
+  const fetchRates = useCallback(async () => {
+    try {
+      const data = await apiCall<Record<string, CurrencyRate>>('GET', '/api/rates/average');
+      setRates(data);
+    } catch {
+      // Rates fetch failed
+    } finally {
+      setRatesLoading(false);
+    }
+  }, []);
 
   useEffect(() => {
     loadData();
   }, [address]);
+
+  useEffect(() => {
+    fetchRates();
+    const interval = setInterval(fetchRates, 30000);
+    return () => clearInterval(interval);
+  }, [fetchRates]);
 
   async function loadData() {
     setLoading(true);
@@ -82,6 +102,59 @@ export default function Home() {
         )}
       </div>
 
+      {/* Market Rates */}
+      <div className="bg-tg-section-bg rounded-2xl p-4 mb-4">
+        <div className="flex items-center justify-between mb-3">
+          <h3 className="text-tg-text font-semibold">Market Rates</h3>
+          <button
+            onClick={() => { impact('light'); fetchRates(); }}
+            className="text-tg-link text-xs"
+          >
+            Refresh
+          </button>
+        </div>
+        {ratesLoading ? (
+          <div className="space-y-3">
+            {[1, 2, 3].map(i => (
+              <div key={i} className="flex justify-between items-center">
+                <div className="skeleton h-4 w-36 rounded" />
+                <div className="skeleton h-4 w-20 rounded" />
+              </div>
+            ))}
+          </div>
+        ) : Object.keys(rates).length > 0 ? (
+          <div className="space-y-3">
+            {Object.entries(CURRENCIES).map(([code, info]) => {
+              const rate = rates[code];
+              if (!rate) return null;
+              return (
+                <div key={code} className="flex items-center justify-between py-1.5 border-b border-tg-secondary-bg last:border-0">
+                  <div className="flex items-center gap-2">
+                    <span className="text-base">{info.flag}</span>
+                    <div>
+                      <p className="text-tg-text text-sm font-medium">
+                        1 USDT ≈ {rate.avgSellRate.toFixed(2)} {info.symbol}
+                      </p>
+                      <p className="text-tg-hint text-[10px]">
+                        Range: {rate.minRate.toFixed(2)} - {rate.maxRate.toFixed(2)}
+                      </p>
+                    </div>
+                  </div>
+                  <p className="text-tg-hint text-[10px] text-right">
+                    {rate.orderCount} offer{rate.orderCount !== 1 ? 's' : ''}
+                  </p>
+                </div>
+              );
+            })}
+            {Object.entries(CURRENCIES).every(([code]) => !rates[code]) && (
+              <p className="text-tg-hint text-sm text-center py-2">No active offers</p>
+            )}
+          </div>
+        ) : (
+          <p className="text-tg-hint text-sm text-center py-2">No active offers</p>
+        )}
+      </div>
+
       {/* Quick Actions */}
       <div className="grid grid-cols-2 gap-3 mb-4">
         <button
@@ -90,7 +163,7 @@ export default function Home() {
         >
           <span className="text-2xl block mb-1">&#x1F4B0;</span>
           <span className="font-semibold text-base">Buy USDT</span>
-          <span className="text-xs opacity-80 block mt-0.5">Purchase with TTD</span>
+          <span className="text-xs opacity-80 block mt-0.5">Purchase with local currency</span>
         </button>
         <button
           onClick={() => { impact('medium'); navigate('/create?type=SELL'); }}
@@ -98,7 +171,7 @@ export default function Home() {
         >
           <span className="text-2xl block mb-1">&#x1F4B8;</span>
           <span className="font-semibold text-base">Sell USDT</span>
-          <span className="text-xs opacity-80 block mt-0.5">Convert to TTD</span>
+          <span className="text-xs opacity-80 block mt-0.5">Convert to local currency</span>
         </button>
       </div>
 
@@ -169,7 +242,7 @@ export default function Home() {
                     {trade.amount} USDT
                   </p>
                   <p className="text-tg-hint text-xs">
-                    @ {trade.pricePerUsdt} TTD
+                    @ {trade.pricePerUsdt} {getCurrencySymbol(trade.fiatCurrency)}
                   </p>
                 </div>
                 <span className="text-xs bg-[#22c55e]/10 text-[#22c55e] px-2 py-1 rounded-full">

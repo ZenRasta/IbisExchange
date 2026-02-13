@@ -64,11 +64,32 @@ model User {
   totalTrades     Int       @default(0)
   successfulTrades Int      @default(0)
   totalVolume     Float     @default(0)
+  totalUpvotes    Int       @default(0)
+  totalDownvotes  Int       @default(0)
+
+  // Currency preference
+  preferredCurrency String  @default("TTD")
+
+  // Ban system
+  isBanned        Boolean   @default(false)
+  bannedAt        DateTime?
+  bannedBy        String?
+  banReason       String?
+  banType         String?
+  banExpiresAt    DateTime?
+
+  // Admin
+  isAdmin         Boolean   @default(false)
+  adminLevel      String?
 
   // Relations
   orders          Order[]
   buyTrades       Trade[]   @relation("BuyerTrades")
   sellTrades      Trade[]   @relation("SellerTrades")
+  reviewsGiven    TradeReview[] @relation("ReviewsGiven")
+  reviewsReceived TradeReview[] @relation("ReviewsReceived")
+  disputesRaised  Dispute[]    @relation("DisputesRaised")
+  disputesAgainst Dispute[]    @relation("DisputesAgainst")
 
   createdAt       DateTime  @default(now())
   updatedAt       DateTime  @updatedAt
@@ -86,6 +107,7 @@ model Order {
   amount          Float
   remainingAmount Float
   pricePerUsdt    Float
+  currency        String      @default("TTD")
   paymentMethods  String[]
   bankDetails     String?
   minTradeAmount  Float?
@@ -100,6 +122,7 @@ model Order {
   updatedAt       DateTime    @updatedAt
 
   @@index([type, status])
+  @@index([currency, status])
   @@index([userId])
   @@index([pricePerUsdt])
 }
@@ -145,6 +168,15 @@ model Trade {
   buyerRating     Int?
   sellerRating    Int?
 
+  // Fee
+  feeAmount       Float?
+  feePercent      Float?
+
+  // Relations
+  reviews         TradeReview[]
+  disputes        Dispute[]
+  feeRecords      FeeRecord[]
+
   createdAt       DateTime    @default(now())
   updatedAt       DateTime    @updatedAt
 
@@ -152,4 +184,56 @@ model Trade {
   @@index([sellerId])
   @@index([status])
   @@index([orderId])
+}
+
+model TradeReview {
+  id          String   @id @default(cuid())
+  tradeId     String
+  trade       Trade    @relation(fields: [tradeId], references: [id])
+  reviewerId  String
+  reviewer    User     @relation("ReviewsGiven", fields: [reviewerId], references: [id])
+  revieweeId  String
+  reviewee    User     @relation("ReviewsReceived", fields: [revieweeId], references: [id])
+  vote        String
+  comment     String?
+  createdAt   DateTime @default(now())
+
+  @@unique([tradeId, reviewerId])
+  @@index([revieweeId])
+}
+
+model Dispute {
+  id            String    @id @default(cuid())
+  tradeId       String
+  trade         Trade     @relation(fields: [tradeId], references: [id])
+  raisedBy      String
+  raiser        User      @relation("DisputesRaised", fields: [raisedBy], references: [id])
+  againstUser   String
+  target        User      @relation("DisputesAgainst", fields: [againstUser], references: [id])
+  reason        String
+  description   String
+  evidence      Json      @default("[]")
+  status        String    @default("open")
+  resolution    Json?
+  resolvedBy    String?
+  resolvedAt    DateTime?
+  adminNotes    String?
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  @@index([status])
+  @@index([tradeId])
+}
+
+model FeeRecord {
+  id         String   @id @default(cuid())
+  tradeId    String
+  trade      Trade    @relation(fields: [tradeId], references: [id])
+  feeAmount  Float
+  feePercent Float
+  paidBy     String
+  txHash     String?
+  createdAt  DateTime @default(now())
+
+  @@index([tradeId])
 }

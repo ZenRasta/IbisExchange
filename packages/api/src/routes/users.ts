@@ -1,8 +1,12 @@
 import { Router, Request, Response } from 'express';
 import { prisma } from '@ibis/shared';
 import { reputationService } from '../services/reputationService';
+import { leaderboardRouter } from './leaderboard';
 
 export const usersRouter = Router();
+
+// Mount leaderboard BEFORE :id param routes to avoid conflicts
+usersRouter.use('/leaderboard', leaderboardRouter);
 
 /**
  * GET /api/users/me — Current user profile

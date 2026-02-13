@@ -3,11 +3,29 @@ import { useNavigate } from 'react-router-dom';
 import { useTonAddress } from '@tonconnect/ui-react';
 import { apiCall } from '../lib/api';
 import { useHaptic } from '../hooks/useHaptic';
+import { CURRENCIES, CURRENCY_CODES, getCurrencySymbol } from '../lib/currencies';
 import type { UserProfile, Order } from '../lib/types';
 
 function truncateAddress(addr: string): string {
   if (addr.length <= 12) return addr;
   return `${addr.slice(0, 6)}...${addr.slice(-6)}`;
+}
+
+function getTier(totalTrades: number, reputationScore: number): { badge: string; label: string } {
+  if (totalTrades >= 100 && reputationScore >= 4.5) return { badge: '\u{1F451}', label: 'Diamond' };
+  if (totalTrades >= 50 && reputationScore >= 4.0) return { badge: '\u{1F48E}', label: 'Platinum' };
+  if (totalTrades >= 25 && reputationScore >= 3.5) return { badge: '\u{1F947}', label: 'Gold' };
+  if (totalTrades >= 10 && reputationScore >= 3.0) return { badge: '\u{1F948}', label: 'Silver' };
+  if (totalTrades >= 5) return { badge: '\u{1F949}', label: 'Bronze' };
+  return { badge: '\u{1F331}', label: 'Newcomer' };
+}
+
+function getFeeTier(totalTrades: number): { percent: number; label: string } {
+  if (totalTrades >= 100) return { percent: 0.1, label: 'VIP' };
+  if (totalTrades >= 50) return { percent: 0.2, label: 'Platinum' };
+  if (totalTrades >= 25) return { percent: 0.3, label: 'Gold' };
+  if (totalTrades >= 10) return { percent: 0.4, label: 'Silver' };
+  return { percent: 0.5, label: 'Standard' };
 }
 
 export default function Profile() {
@@ -18,6 +36,7 @@ export default function Profile() {
   const [orders, setOrders] = useState<Order[]>([]);
   const [loading, setLoading] = useState(true);
   const [copied, setCopied] = useState(false);
+  const [savingCurrency, setSavingCurrency] = useState(false);
 
   useEffect(() => {
     loadProfile();
@@ -63,6 +82,20 @@ export default function Profile() {
     }
   };
 
+  const handleCurrencyChange = async (currency: string) => {
+    impact('light');
+    setSavingCurrency(true);
+    try {
+      await apiCall('PUT', '/api/users/me', { preferredCurrency: currency });
+      setProfile(prev => prev ? { ...prev, preferredCurrency: currency } : prev);
+      notification('success');
+    } catch {
+      notification('error');
+    } finally {
+      setSavingCurrency(false);
+    }
+  };
+
   const kycLabel = (() => {
     if (!profile) return '';
     switch (profile.kycStatus) {
@@ -84,6 +117,9 @@ export default function Profile() {
       default: return 'bg-tg-hint/10 text-tg-hint';
     }
   })();
+
+  const tier = profile ? getTier(profile.totalTrades, profile.reputationScore) : null;
+  const feeTier = profile ? getFeeTier(profile.totalTrades) : null;
 
   if (loading) {
     return (
@@ -128,6 +164,11 @@ export default function Profile() {
             </h2>
             {profile?.username && (
               <p className="text-tg-hint text-sm">@{profile.username}</p>
+            )}
+            {tier && (
+              <p className="text-xs mt-0.5">
+                {tier.badge} {tier.label}
+              </p>
             )}
           </div>
           <span className={`text-xs px-2.5 py-1 rounded-full font-medium ${kycColor}`}>
@@ -216,6 +257,62 @@ export default function Profile() {
         </div>
       </div>
 
+      {/* Votes & Tier Info */}
+      <div className="bg-tg-section-bg rounded-2xl p-4 mb-4">
+        <h3 className="text-tg-text font-semibold mb-3">Community Standing</h3>
+        <div className="space-y-2">
+          <div className="flex justify-between text-sm">
+            <span className="text-tg-hint">Upvotes</span>
+            <span className="text-[#22c55e] font-medium">+{profile?.totalUpvotes ?? 0}</span>
+          </div>
+          <div className="flex justify-between text-sm">
+            <span className="text-tg-hint">Downvotes</span>
+            <span className="text-tg-destructive font-medium">-{profile?.totalDownvotes ?? 0}</span>
+          </div>
+          {tier && (
+            <div className="flex justify-between text-sm border-t border-tg-secondary-bg pt-2">
+              <span className="text-tg-hint">Tier</span>
+              <span className="text-tg-text font-medium">{tier.badge} {tier.label}</span>
+            </div>
+          )}
+          {feeTier && (
+            <div className="flex justify-between text-sm">
+              <span className="text-tg-hint">Fee Rate</span>
+              <span className="text-tg-text font-medium">{feeTier.percent}% ({feeTier.label})</span>
+            </div>
+          )}
+        </div>
+      </div>
+
+      {/* Preferred Currency */}
+      <div className="bg-tg-section-bg rounded-2xl p-4 mb-4">
+        <h3 className="text-tg-text font-semibold mb-3">Preferred Currency</h3>
+        <div className="flex overflow-x-auto no-scrollbar gap-1.5 -mx-1 px-1">
+          {CURRENCY_CODES.map(code => {
+            const info = CURRENCIES[code];
+            const isActive = (profile?.preferredCurrency || 'TTD') === code;
+            return (
+              <button
+                key={code}
+                onClick={() => handleCurrencyChange(code)}
+                disabled={savingCurrency}
+                className={`flex items-center gap-1 px-3 py-1.5 rounded-full text-xs font-semibold whitespace-nowrap transition-colors flex-shrink-0 disabled:opacity-50 ${
+                  isActive
+                    ? 'bg-tg-button text-tg-button-text'
+                    : 'bg-tg-secondary-bg text-tg-hint'
+                }`}
+              >
+                <span>{info.flag}</span>
+                <span>{code}</span>
+              </button>
+            );
+          })}
+        </div>
+        <p className="text-tg-hint text-xs mt-2">
+          Used as the default currency when browsing orders
+        </p>
+      </div>
+
       {/* Trade Limits */}
       <div className="bg-tg-section-bg rounded-2xl p-4 mb-4">
         <h3 className="text-tg-text font-semibold mb-2">Trade Limits</h3>
@@ -261,7 +358,7 @@ export default function Profile() {
                     </span>
                     {' '}{order.amount} USDT
                   </p>
-                  <p className="text-tg-hint text-xs">@ {order.pricePerUsdt} TTD</p>
+                  <p className="text-tg-hint text-xs">@ {order.pricePerUsdt} {getCurrencySymbol(order.currency)}</p>
                 </div>
                 <button
                   onClick={() => handleCancelOrder(order.id)}
@@ -274,6 +371,22 @@ export default function Profile() {
           </div>
         )}
       </div>
+
+      {/* Admin Link */}
+      {profile?.isAdmin && (
+        <button
+          onClick={() => { impact('medium'); navigate('/admin'); }}
+          className="w-full bg-tg-section-bg rounded-2xl p-4 mb-4 flex items-center justify-between active:bg-tg-secondary-bg transition-colors"
+        >
+          <div>
+            <p className="text-tg-text font-semibold">Admin Panel</p>
+            <p className="text-tg-hint text-sm">Manage disputes, users & orders</p>
+          </div>
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="var(--tg-theme-hint-color)" strokeWidth="2">
+            <polyline points="9,18 15,12 9,6" />
+          </svg>
+        </button>
+      )}
     </div>
   );
 }

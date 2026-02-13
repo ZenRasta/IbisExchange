@@ -10,6 +10,7 @@ import { connectRedis } from '@ibis/shared';
 
 // Middleware
 import { telegramAuth } from './middleware/telegramAuth';
+import { checkBanned } from './middleware/banCheck';
 import { rateLimiter } from './middleware/rateLimiter';
 
 // Routes — owned by this agent
@@ -17,6 +18,10 @@ import { ordersRouter } from './routes/orders';
 import { tradesRouter } from './routes/trades';
 import { usersRouter } from './routes/users';
 import { webhooksRouter } from './routes/webhooks';
+import { ratesRouter } from './routes/rates';
+import { reviewsRouter } from './routes/reviews';
+import { disputesRouter, myDisputesRouter } from './routes/disputes';
+import { adminRouter } from './routes/admin';
 
 // Routes — owned by KYC agent (DO NOT MODIFY)
 import { kycRouter } from './routes/kyc';
@@ -69,11 +74,18 @@ app.get('/api/health', (_req, res) => {
 // --------------- Webhook Routes (NO auth — they have their own verification) ---------------
 app.use('/api/webhooks', webhooksRouter);
 
+// --------------- Public Routes (NO auth required) ---------------
+app.use('/api/rates', rateLimiter({ windowMs: 60000, max: 60, keyPrefix: 'rl:rates' }), ratesRouter);
+
 // --------------- Authenticated Routes (Telegram initData required) ---------------
-app.use('/api/orders', telegramAuth, rateLimiter({ windowMs: 60000, max: 30, keyPrefix: 'rl:orders' }), ordersRouter);
-app.use('/api/trades', telegramAuth, rateLimiter({ windowMs: 60000, max: 20, keyPrefix: 'rl:trades' }), tradesRouter);
+app.use('/api/orders', telegramAuth, checkBanned, rateLimiter({ windowMs: 60000, max: 30, keyPrefix: 'rl:orders' }), ordersRouter);
+app.use('/api/trades', telegramAuth, checkBanned, rateLimiter({ windowMs: 60000, max: 20, keyPrefix: 'rl:trades' }), tradesRouter);
 app.use('/api/users', telegramAuth, rateLimiter({ windowMs: 60000, max: 30, keyPrefix: 'rl:users' }), usersRouter);
 app.use('/api/kyc', telegramAuth, kycRouter);
+app.use('/api/reviews', telegramAuth, checkBanned, rateLimiter({ windowMs: 60000, max: 20, keyPrefix: 'rl:reviews' }), reviewsRouter);
+app.use('/api/disputes', telegramAuth, checkBanned, rateLimiter({ windowMs: 60000, max: 20, keyPrefix: 'rl:disputes' }), disputesRouter);
+app.use('/api/my', telegramAuth, rateLimiter({ windowMs: 60000, max: 30, keyPrefix: 'rl:my' }), myDisputesRouter);
+app.use('/api/admin', telegramAuth, rateLimiter({ windowMs: 60000, max: 60, keyPrefix: 'rl:admin' }), adminRouter);
 
 // --------------- 404 Handler ---------------
 app.use((_req, res) => {

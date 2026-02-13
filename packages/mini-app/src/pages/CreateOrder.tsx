@@ -2,19 +2,10 @@ import { useState, useEffect } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { apiCall } from '../lib/api';
 import { useHaptic } from '../hooks/useHaptic';
-
-const PAYMENT_METHODS = [
-  'Republic Bank',
-  'First Citizens',
-  'Scotiabank',
-  'RBC Royal Bank',
-  'JMMB Bank',
-  'Linx',
-  'PayWise',
-  'Cash (in-person)',
-];
+import { CURRENCIES, CURRENCY_CODES, DEFAULT_CURRENCY, getCurrencySymbol, getPaymentMethods } from '../lib/currencies';
 
 const DEFAULT_RATE = 6.80;
+const FEE_PERCENT = 0.5;
 
 export default function CreateOrder() {
   const navigate = useNavigate();
@@ -23,6 +14,9 @@ export default function CreateOrder() {
 
   const [type, setType] = useState<'BUY' | 'SELL'>(
     (searchParams.get('type')?.toUpperCase() as 'BUY' | 'SELL') || 'SELL'
+  );
+  const [currency, setCurrency] = useState<string>(
+    searchParams.get('currency') || DEFAULT_CURRENCY
   );
   const [amount, setAmount] = useState('');
   const [price, setPrice] = useState(DEFAULT_RATE.toString());
@@ -34,12 +28,25 @@ export default function CreateOrder() {
 
   const amountNum = parseFloat(amount) || 0;
   const priceNum = parseFloat(price) || 0;
-  const totalTtd = amountNum * priceNum;
+  const totalFiat = amountNum * priceNum;
+  const currencySymbol = getCurrencySymbol(currency);
+  const paymentMethods = getPaymentMethods(currency);
+
+  const feeAmount = type === 'SELL' ? amountNum * (FEE_PERCENT / 100) : 0;
+  const netAmount = type === 'SELL' ? amountNum - feeAmount : amountNum;
+  const isSmallTrade = amountNum > 0 && amountNum < 10;
 
   useEffect(() => {
     const t = searchParams.get('type')?.toUpperCase();
     if (t === 'BUY' || t === 'SELL') setType(t);
+    const c = searchParams.get('currency');
+    if (c && CURRENCIES[c]) setCurrency(c);
   }, [searchParams]);
+
+  // Reset payment methods when currency changes
+  useEffect(() => {
+    setSelectedMethods([]);
+  }, [currency]);
 
   const toggleMethod = (method: string) => {
     impact('light');
@@ -52,10 +59,9 @@ export default function CreateOrder() {
 
   const validate = (): string | null => {
     if (amountNum <= 0) return 'Enter a valid USDT amount';
-    if (amountNum < 10) return 'Minimum order is 10 USDT';
+    if (amountNum < 1) return 'Minimum order is 1 USDT';
     if (amountNum > 10000) return 'Maximum order is 10,000 USDT';
     if (priceNum <= 0) return 'Enter a valid price per USDT';
-    if (priceNum < 5 || priceNum > 10) return 'Price must be between 5-10 TTD per USDT';
     if (selectedMethods.length === 0) return 'Select at least one payment method';
     if (type === 'SELL' && !bankDetails.trim()) return 'Enter your bank details for buyers';
     return null;
@@ -81,6 +87,7 @@ export default function CreateOrder() {
         type,
         amount: amountNum,
         pricePerUsdt: priceNum,
+        currency,
         paymentMethods: selectedMethods,
         bankDetails: type === 'SELL' ? bankDetails.trim() : undefined,
       });
@@ -109,16 +116,32 @@ export default function CreateOrder() {
             </span>
           </div>
           <div className="flex justify-between">
+            <span className="text-tg-hint text-sm">Currency</span>
+            <span className="text-tg-text text-sm font-semibold">{CURRENCIES[currency]?.flag} {currency}</span>
+          </div>
+          <div className="flex justify-between">
             <span className="text-tg-hint text-sm">Amount</span>
             <span className="text-tg-text text-sm font-semibold">{amountNum} USDT</span>
           </div>
           <div className="flex justify-between">
             <span className="text-tg-hint text-sm">Price</span>
-            <span className="text-tg-text text-sm font-semibold">{priceNum} TTD/USDT</span>
+            <span className="text-tg-text text-sm font-semibold">{priceNum} {currencySymbol}/USDT</span>
           </div>
+          {type === 'SELL' && (
+            <>
+              <div className="flex justify-between">
+                <span className="text-tg-hint text-sm">Platform Fee ({FEE_PERCENT}%)</span>
+                <span className="text-tg-hint text-sm">{feeAmount.toFixed(2)} USDT</span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-tg-hint text-sm">Net Amount</span>
+                <span className="text-tg-text text-sm font-semibold">{netAmount.toFixed(2)} USDT</span>
+              </div>
+            </>
+          )}
           <div className="border-t border-tg-secondary-bg pt-2 flex justify-between">
             <span className="text-tg-hint text-sm">Total</span>
-            <span className="text-tg-text font-bold">{totalTtd.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })} TTD</span>
+            <span className="text-tg-text font-bold">{totalFiat.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })} {currencySymbol}</span>
           </div>
           <div className="flex justify-between">
             <span className="text-tg-hint text-sm">Payment</span>
@@ -177,6 +200,31 @@ export default function CreateOrder() {
         ))}
       </div>
 
+      {/* Currency Selector */}
+      <div className="bg-tg-section-bg rounded-2xl p-4 mb-3">
+        <label className="text-tg-hint text-xs block mb-2">Currency</label>
+        <div className="flex overflow-x-auto no-scrollbar gap-1.5 -mx-1 px-1">
+          {CURRENCY_CODES.map(code => {
+            const info = CURRENCIES[code];
+            const isActive = currency === code;
+            return (
+              <button
+                key={code}
+                onClick={() => { setCurrency(code); impact('light'); }}
+                className={`flex items-center gap-1 px-3 py-1.5 rounded-full text-xs font-semibold whitespace-nowrap transition-colors flex-shrink-0 ${
+                  isActive
+                    ? 'bg-tg-button text-tg-button-text'
+                    : 'bg-tg-secondary-bg text-tg-hint'
+                }`}
+              >
+                <span>{info.flag}</span>
+                <span>{code}</span>
+              </button>
+            );
+          })}
+        </div>
+      </div>
+
       {/* Amount */}
       <div className="bg-tg-section-bg rounded-2xl p-4 mb-3">
         <label className="text-tg-hint text-xs block mb-2">Amount (USDT)</label>
@@ -186,7 +234,7 @@ export default function CreateOrder() {
           value={amount}
           onChange={e => setAmount(e.target.value)}
           placeholder="0.00"
-          min="10"
+          min="1"
           max="10000"
           className="w-full bg-transparent text-tg-text text-2xl font-bold outline-none placeholder-tg-hint/40"
         />
@@ -205,7 +253,7 @@ export default function CreateOrder() {
 
       {/* Price per USDT */}
       <div className="bg-tg-section-bg rounded-2xl p-4 mb-3">
-        <label className="text-tg-hint text-xs block mb-2">Price per USDT (TTD)</label>
+        <label className="text-tg-hint text-xs block mb-2">Price per USDT ({currencySymbol})</label>
         <input
           type="number"
           inputMode="decimal"
@@ -216,17 +264,36 @@ export default function CreateOrder() {
           className="w-full bg-transparent text-tg-text text-2xl font-bold outline-none placeholder-tg-hint/40"
         />
         <p className="text-tg-hint text-xs mt-1">
-          Market rate: ~{DEFAULT_RATE.toFixed(2)} TTD/USDT
+          Set your rate in {currencySymbol} per USDT
         </p>
       </div>
 
-      {/* Total Preview */}
+      {/* Total Preview + Fee Breakdown */}
       {amountNum > 0 && priceNum > 0 && (
-        <div className="bg-tg-button/10 rounded-2xl p-4 mb-3 animate-fade-in">
-          <p className="text-tg-hint text-xs">Total Value</p>
-          <p className="text-tg-text text-xl font-bold">
-            {totalTtd.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })} TTD
-          </p>
+        <div className="bg-tg-button/10 rounded-2xl p-4 mb-3 animate-fade-in space-y-1.5">
+          <div className="flex justify-between">
+            <p className="text-tg-hint text-xs">Total Value</p>
+            <p className="text-tg-text text-lg font-bold">
+              {totalFiat.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })} {currencySymbol}
+            </p>
+          </div>
+          {type === 'SELL' && (
+            <>
+              <div className="flex justify-between">
+                <p className="text-tg-hint text-xs">Platform fee ({FEE_PERCENT}%)</p>
+                <p className="text-tg-hint text-xs">{feeAmount.toFixed(2)} USDT</p>
+              </div>
+              <div className="flex justify-between border-t border-tg-secondary-bg pt-1.5">
+                <p className="text-tg-hint text-xs">Net amount</p>
+                <p className="text-tg-text text-sm font-semibold">{netAmount.toFixed(2)} USDT</p>
+              </div>
+            </>
+          )}
+          {isSmallTrade && (
+            <p className="text-yellow-600 text-xs mt-1">
+              Network fees may be significant for small trades
+            </p>
+          )}
         </div>
       )}
 
@@ -234,7 +301,7 @@ export default function CreateOrder() {
       <div className="bg-tg-section-bg rounded-2xl p-4 mb-3">
         <label className="text-tg-hint text-xs block mb-2">Payment Methods</label>
         <div className="flex flex-wrap gap-2">
-          {PAYMENT_METHODS.map(method => (
+          {paymentMethods.map(method => (
             <button
               key={method}
               onClick={() => toggleMethod(method)}
